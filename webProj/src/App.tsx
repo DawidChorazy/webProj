@@ -1,35 +1,58 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from "react";
+import {
+  createProject,
+  getProjects,
+  deleteProject,
+  Project,
+} from "./services/projectService";
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [projects, setProjects] = useState<Project[]>(getProjects());
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  const handleAdd = () => {
+    if (!name || !description) return;
+
+    createProject(name, description);
+    setProjects([...getProjects()]);
+    setName("");
+    setDescription("");
+  };
+
+  const handleDelete = (id: number) => {
+    deleteProject(id);
+    setProjects([...getProjects()]);
+  };
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <div style={{ padding: "20px" }}>
+      <h1>Projects</h1>
+
+      <input
+        placeholder="Project name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <br />
+      <input
+        placeholder="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+      />
+      <br />
+      <button onClick={handleAdd}>Add Project</button>
+
+      <ul>
+        {projects.map((project) => (
+          <li key={project.id}>
+            <strong>{project.name}</strong> - {project.description}
+            <button onClick={() => handleDelete(project.id)}>Delete</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
-export default App
+export default App;
