@@ -13,6 +13,16 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+.header {
+  position: fixed ;
+  top:0;
+  left:0;
+  width: 100%;
+  background: black;
+  padding: auto;
+  font-weight: bold;
+}
+
 a {
   font-weight: 500;
   color: #646cff;

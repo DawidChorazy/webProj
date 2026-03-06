@@ -1,45 +1,38 @@
-export interface Project {
+export type Project = {
   id: number;
   name: string;
   description: string;
-}
+};
 
 let projects: Project[] = [];
+let currentProjectId: number | null = null;
 
-export const createProject = (name: string, description: string): Project => {
+export function createProject(name: string, description: string) {
   const newProject: Project = {
-    id: projects.length + 1,
+    id: Date.now(),
     name,
     description,
   };
 
   projects.push(newProject);
-  return newProject;
-};
+}
 
-export const getProjects = (): Project[] => {
+export function getProjects(): Project[] {
   return projects;
-};
+}
 
-export const getProjectById = (id: number): Project | undefined => {
-  return projects.find(project => project.id === id);
-};
+export function deleteProject(id: number) {
+  projects = projects.filter((p) => p.id !== id);
 
-export const updateProject = (
-  id: number,
-  name: string,
-  description: string
-): Project | undefined => {
-  const project = projects.find(project => project.id === id);
-
-  if (project) {
-    project.name = name;
-    project.description = description;
+  if (currentProjectId === id) {
+    currentProjectId = null;
   }
+}
 
-  return project;
-};
+export function setCurrentProject(id: number | null) {
+  currentProjectId = id;
+}
 
-export const deleteProject = (id: number): void => {
-  projects = projects.filter(project => project.id !== id);
-};
+export function getCurrentProject(): Project | null {
+  return projects.find((p) => p.id === currentProjectId) ?? null;
+}
