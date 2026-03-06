@@ -10,7 +10,6 @@ import {
 
 import type { Project } from "./services/projectService";
 
-// HEADER - zawsze u góry
 function Header() {
   const user = UserManager.getCurrentUser();
 
@@ -43,7 +42,6 @@ function App() {
     deleteProject(id);
     setProjects([...getProjects()]);
 
-    // jeśli aktualny projekt został usunięty
     if (currentProject?.id === id) {
       setCurrentProject(null);
     }
