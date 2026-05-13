@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import notificationService from "./services/notificationService";
+
 import {
   createProject,
   getProjects,
@@ -13,6 +14,7 @@ import {
   getStoriesForCurrentProject,
   createStory,
   updateStoryStatus,
+  assignStoryUser,
   deleteStory,
 } from "./services/storyService";
 
@@ -20,50 +22,154 @@ import { NotificationBadge } from "./components/NotificationBadge";
 import { NotificationPanel } from "./components/NotificationPanel";
 import { NotificationDialog } from "./components/NotificationDialog";
 import { NotificationDetail } from "./components/NotificationDetail";
+import "./App.css";
 
 import type { Priority, Status, Story } from "./services/storyService";
 import type { Project } from "./services/projectService";
 import type { Notification } from "./types/notification";
 
 interface User {
-  id: number;
+  id: string;
   email: string;
-  firstName?: string;
-  lastName?: string;
   role: "Guest" | "User" | "Admin";
   isBlocked: boolean;
 }
 
+type KnownUser = User;
+
+type ViewMode = "projects" | "notifications" | "notificationDetail";
+type ThemeMode = "system" | "light" | "dark";
+
+const roleLabels: Record<User["role"], string> = {
+  Admin: "Administrator",
+  User: "Użytkownik",
+  Guest: "Gość",
+};
+
+const statusLabels: Record<Status, string> = {
+  todo: "Do zrobienia",
+  in_progress: "W trakcie",
+  done: "Zrobione",
+};
+
+const priorityLabels: Record<Priority, string> = {
+  low: "Niski",
+  medium: "Średni",
+  high: "Wysoki",
+};
+
+interface StoredUser {
+  id: string;
+  role?: string;
+}
+
+function getKnownAdminRecipientIds(
+  currentUser: User,
+  knownUsers: KnownUser[]
+): string[] {
+  const adminIds = new Set<string>();
+
+  try {
+    const storedUsers = JSON.parse(localStorage.getItem("users") ?? "[]") as
+      | StoredUser[]
+      | null;
+
+    storedUsers?.forEach((storedUser) => {
+      const role = storedUser.role?.toLowerCase();
+      if (role === "admin" || role === "super_admin") {
+        adminIds.add(storedUser.id);
+      }
+    });
+  } catch {
+    // The OAuth-only flow does not always have a local users directory.
+  }
+
+  if (currentUser.role === "Admin") {
+    adminIds.add(currentUser.id);
+  }
+
+  knownUsers
+    .filter((knownUser) => knownUser.role === "Admin" && !knownUser.isBlocked)
+    .forEach((knownUser) => adminIds.add(knownUser.id));
+
+  return Array.from(adminIds);
+}
+
+async function loadKnownUsers(currentUser: User): Promise<KnownUser[]> {
+  try {
+    const res = await fetch("/api/users", {
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      return [currentUser];
+    }
+
+    const users = (await res.json()) as KnownUser[];
+    return users.length > 0 ? users : [currentUser];
+  } catch {
+    return [currentUser];
+  }
+}
+
 function Header({
   user,
-  onNotificationClick,
+  currentView,
+  themeMode,
+  onNavigate,
+  onLogout,
+  onThemeChange,
 }: {
   user: User;
-  onNotificationClick: () => void;
+  currentView: ViewMode;
+  themeMode: ThemeMode;
+  onNavigate: (view: ViewMode) => void;
+  onLogout: () => void;
+  onThemeChange: (themeMode: ThemeMode) => void;
 }) {
   return (
-    <header
-      style={{
-        padding: "10px 20px",
-        background: "#282c34",
-        color: "white",
-        position: "fixed",
-        top: 0,
-        width: "100%",
-        left: 0,
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        zIndex: 1000,
-      }}
-    >
-      <span>Project Manager</span>
+    <header className="topbar">
+      <button
+        onClick={() => onNavigate("projects")}
+        className="brand-button"
+      >
+        Project Manager
+      </button>
 
-      <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
-        <span>
-          Logged User: <strong>{user.email}</strong>
+      <nav className="nav-tabs">
+        <button
+          onClick={() => onNavigate("projects")}
+          className={`nav-button ${currentView === "projects" ? "is-active" : ""}`}
+        >
+          Projekty
+        </button>
+      </nav>
+
+      <div className="user-tools">
+        <span className="user-email">
+          Zalogowano: <strong>{user.email}</strong>
         </span>
-        <NotificationBadge onClick={onNotificationClick} />
+        <span className={`role-pill role-${user.role.toLowerCase()}`}>
+          {roleLabels[user.role]}
+        </span>
+        <NotificationBadge
+          recipientId={user.id}
+          onClick={() => onNavigate("notifications")}
+        />
+        <div className="theme-switch" aria-label="Tryb wyglądu">
+          {(["system", "light", "dark"] as ThemeMode[]).map((mode) => (
+            <button
+              key={mode}
+              className={`theme-button ${themeMode === mode ? "is-active" : ""}`}
+              onClick={() => onThemeChange(mode)}
+              type="button"
+            >
+              {mode === "system" ? "System" : mode === "light" ? "Jasny" : "Ciemny"}
+            </button>
+          ))}
+        </div>
+        <button className="ghost-button" onClick={onLogout}>Wyloguj</button>
       </div>
     </header>
   );
@@ -71,7 +177,9 @@ function Header({
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [knownUsers, setKnownUsers] = useState<KnownUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProject, setCurrentProjectState] = useState<Project | null>(null);
@@ -84,31 +192,56 @@ function App() {
   const [storyDesc, setStoryDesc] = useState("");
   const [storyPriority, setStoryPriority] = useState<Priority>("medium");
 
-  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
-  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "detail">("list");
+  const [selectedNotification, setSelectedNotification] =
+    useState<Notification | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("projects");
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const storedTheme = localStorage.getItem("themeMode");
+    return storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"
+      ? storedTheme
+      : "system";
+  });
 
-  // LOAD USER
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    localStorage.setItem("themeMode", themeMode);
+  }, [themeMode]);
+
   useEffect(() => {
     async function loadUser() {
       try {
         const res = await fetch("/api/me", {
           credentials: "include",
+          cache: "no-store",
         });
 
         if (!res.ok) {
           setUser(null);
-          setLoading(false);
+          setKnownUsers([]);
           return;
         }
 
         const data: User = await res.json();
         setUser(data);
+        setKnownUsers(await loadKnownUsers(data));
 
-        setProjects(getProjects());
-        setStories(getStoriesForCurrentProject());
+        try {
+          setProjects(await getProjects());
+          setCurrentProjectState(await getCurrentProject());
+          setStories(await getStoriesForCurrentProject());
+          setDataError(null);
+        } catch (error) {
+          console.error("Failed to load application data:", error);
+          setProjects([]);
+          setCurrentProjectState(null);
+          setStories([]);
+          setDataError(
+            "Nie udało się pobrać danych z bazy. Sprawdź konfigurację MongoDB."
+          );
+        }
       } catch {
         setUser(null);
+        setKnownUsers([]);
       } finally {
         setLoading(false);
       }
@@ -127,175 +260,495 @@ function App() {
       credentials: "include",
     }).finally(() => {
       setUser(null);
+      setKnownUsers([]);
     });
   };
 
-  if (loading) return <div>Loading...</div>;
+  const openNotificationDetail = (notification: Notification) => {
+    setSelectedNotification(notification);
+    setViewMode("notificationDetail");
+  };
 
-  // NO USER
+  if (loading) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <p className="eyebrow">Project Manager</p>
+          <h1>Ładowanie aplikacji</h1>
+          <p>Sprawdzam sesję i pobieram dane.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
-      <div style={{ padding: 40 }}>
-        <h1>Login</h1>
-        <button onClick={handleLogin}>Zaloguj przez Google</button>
+      <div className="auth-page">
+        <div className="auth-card">
+          <p className="eyebrow">Project Manager</p>
+          <h1>Zaloguj się</h1>
+          <p>Wejdź do panelu projektów, historyjek i powiadomień.</p>
+          <button className="primary-button" onClick={handleLogin}>
+            Zaloguj przez Google
+          </button>
+        </div>
       </div>
     );
   }
 
-  // BLOCKED
   if (user.isBlocked) {
     return (
-      <div style={{ padding: 40, color: "red" }}>
-        <h1>Account blocked</h1>
-        <button onClick={handleLogout}>Logout</button>
+      <div className="auth-page">
+        <div className="auth-card blocked-card">
+          <p className="eyebrow">Dostęp zablokowany</p>
+          <h1>Konto zablokowane</h1>
+          <p>Skontaktuj się z administratorem aplikacji.</p>
+          <button className="danger-button" onClick={handleLogout}>Wyloguj</button>
+        </div>
       </div>
     );
   }
 
-  // GUEST
   if (user.role === "Guest") {
     return (
-      <div style={{ padding: 40 }}>
-        <h1>Oczekiwanie na zatwierdzenie konta</h1>
-        <button onClick={handleLogout}>Logout</button>
+      <div className="auth-page">
+        <div className="auth-card">
+          <p className="eyebrow">Konto oczekuje</p>
+          <h1>Oczekiwanie na zatwierdzenie</h1>
+          <p>Administrator musi nadać Ci rolę przed wejściem do panelu.</p>
+          <button className="secondary-button" onClick={handleLogout}>Wyloguj</button>
+        </div>
       </div>
     );
   }
 
-  const handleAddProject = () => {
-    if (!projectName || !projectDesc) return;
+  const isAdmin = user.role === "Admin";
+  const allKnownUsers = knownUsers.some((knownUser) => knownUser.id === user.id)
+    ? knownUsers
+    : [user, ...knownUsers];
+  const assignableUsers = allKnownUsers.filter((knownUser) => !knownUser.isBlocked);
 
-    createProject(projectName, projectDesc);
-    setProjects(getProjects());
+  const getUserLabel = (userId: string) => {
+    const knownUser = allKnownUsers.find((item) => item.id === userId);
 
-    const u = user;
+    if (!knownUser) {
+      return "Nieznany użytkownik";
+    }
 
-    notificationService.createNotification(
-      "Utworzono nowy projekt",
-      `Projekt "${projectName}" został utworzony.`,
-      "high",
-      u.id
+    return `${knownUser.email} (${roleLabels[knownUser.role]})`;
+  };
+
+  const handleAddProject = async () => {
+    if (!projectName.trim() || !projectDesc.trim()) return;
+
+    await createProject(user.id, projectName.trim(), projectDesc.trim());
+    setProjects(await getProjects());
+
+    await notificationService.notifyProjectCreated(
+      projectName.trim(),
+      getKnownAdminRecipientIds(user, allKnownUsers)
     );
 
     setProjectName("");
     setProjectDesc("");
   };
 
-  const handleSelectProject = (id: number) => {
-    setCurrentProject(id);
-    const selected = getCurrentProject();
-    setCurrentProjectState(selected);
-    setStories(getStoriesForCurrentProject());
+  const handleSelectProject = async (id: string) => {
+    await setCurrentProject(id);
+    setCurrentProjectState(await getCurrentProject());
+    setStories(await getStoriesForCurrentProject());
   };
 
-  const handleDeleteProject = (id: number) => {
-    deleteProject(id);
-    setProjects(getProjects());
+  const handleDeleteProject = async (id: string) => {
+    await deleteProject(id);
+    setProjects(await getProjects());
 
     if (currentProject?.id === id) {
-      setCurrentProject(null);
+      await setCurrentProject(null);
       setCurrentProjectState(null);
       setStories([]);
     }
   };
 
-  const handleAddStory = () => {
-    if (!storyName) return;
+  const handleAddStory = async () => {
+    if (!storyName.trim() || !currentProject) return;
 
-    createStory(storyName, storyDesc, storyPriority);
-    setStories(getStoriesForCurrentProject());
+    await createStory(
+      user.id,
+      currentProject.id,
+      storyName.trim(),
+      storyDesc.trim(),
+      storyPriority
+    );
 
-    notificationService.createNotification(
-      "Nowe zadanie",
-      `Dodano "${storyName}"`,
-      "medium",
+    setStories(await getStoriesForCurrentProject());
+
+    await notificationService.notifyTaskAddedToStory(
+      currentProject.name,
+      storyName.trim(),
       user.id
     );
 
     setStoryName("");
     setStoryDesc("");
+    setStoryPriority("medium");
   };
 
-  const handleUpdateStoryStatus = (id: number, newStatus: Status) => {
-    updateStoryStatus(id, newStatus);
-    setStories(getStoriesForCurrentProject());
+  const handleAssignStory = async (story: Story, assigneeId: string) => {
+    if (story.userId === assigneeId) return;
+
+    await assignStoryUser(story.id, assigneeId);
+    setStories(await getStoriesForCurrentProject());
+
+    await notificationService.notifyPersonAssignedToStory(story.name, assigneeId);
   };
 
-  const handleDeleteStory = (id: number) => {
-    deleteStory(id);
-    setStories(getStoriesForCurrentProject());
+  const handleUpdateStoryStatus = async (story: Story, status: Status) => {
+    if (story.status === status) return;
+
+    await updateStoryStatus(story.id, status);
+    setStories(await getStoriesForCurrentProject());
+
+    if (status === "in_progress" || status === "done") {
+      await notificationService.notifyTaskStatusChanged(
+        currentProject?.name ?? "Historyjka",
+        story.name,
+        status === "done" ? "done" : "doing",
+        story.userId
+      );
+    }
   };
+
+  const handleDeleteStory = async (story: Story) => {
+    await notificationService.notifyTaskRemovedFromStory(
+      currentProject?.name ?? "Historyjka",
+      story.name,
+      story.userId
+    );
+
+    await deleteStory(story.id);
+    setStories(await getStoriesForCurrentProject());
+  };
+
+  const currentTodoCount = stories.filter((story) => story.status === "todo").length;
+  const currentDoingCount = stories.filter(
+    (story) => story.status === "in_progress"
+  ).length;
+  const currentDoneCount = stories.filter((story) => story.status === "done").length;
 
   return (
-    <div style={{ padding: "80px 40px 40px" }}>
+    <div className="app-shell">
       <Header
         user={user}
-        onNotificationClick={() => setIsNotificationPanelOpen(!isNotificationPanelOpen)}
-      />
-
-      <NotificationDialog />
-
-      <NotificationPanel
-        isOpen={isNotificationPanelOpen}
-        onClose={() => setIsNotificationPanelOpen(false)}
-        onSelectNotification={(n) => {
-          setSelectedNotification(n);
-          setViewMode("detail");
+        currentView={viewMode}
+        themeMode={themeMode}
+        onNavigate={(view) => {
+          setViewMode(view === "notificationDetail" ? "notifications" : view);
         }}
+        onLogout={handleLogout}
+        onThemeChange={setThemeMode}
       />
 
-      {viewMode === "detail" && selectedNotification && (
+      <NotificationDialog
+        recipientId={user.id}
+        onOpenNotification={openNotificationDetail}
+      />
+
+      {viewMode === "notificationDetail" && selectedNotification && (
         <NotificationDetail
+          recipientId={user.id}
           notificationId={selectedNotification.id}
-          onBack={() => setViewMode("list")}
+          onBack={() => setViewMode("notifications")}
         />
       )}
 
-      {viewMode === "list" && (
-        <>
-          <h1>Projects</h1>
+      {viewMode === "notifications" && (
+        <NotificationPanel
+          recipientId={user.id}
+          onSelectNotification={openNotificationDetail}
+        />
+      )}
 
-          <input
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-            placeholder="name"
-          />
-          <input
-            value={projectDesc}
-            onChange={(e) => setProjectDesc(e.target.value)}
-            placeholder="desc"
-          />
-          <button onClick={handleAddProject}>Add</button>
-
-          <div>
-            {projects.map((p) => (
-              <div key={p.id}>
-                <b>{p.name}</b>
-                <button onClick={() => handleSelectProject(p.id)}>select</button>
-                <button onClick={() => handleDeleteProject(p.id)}>delete</button>
-              </div>
-            ))}
+      {viewMode === "projects" && (
+        <main className="page">
+          <div className="page-header">
+            <div>
+              <p className="eyebrow">Panel roboczy {isAdmin && "Admin"}</p>
+              <h1 className="page-title">Projekty i historyjki</h1>
+              <p className="page-subtitle">
+                Zarządzaj projektami, dodawaj historyjki i sprawdzaj powiadomienia
+                z jednego uporządkowanego miejsca.
+              </p>
+            </div>
           </div>
 
-          {currentProject && (
-            <>
-              <h2>{currentProject.name}</h2>
-
-              <input
-                value={storyName}
-                onChange={(e) => setStoryName(e.target.value)}
-              />
-              <button onClick={handleAddStory}>Add story</button>
-
-              {stories.map((s) => (
-                <div key={s.id}>
-                  {s.name}
-                  <button onClick={() => handleDeleteStory(s.id)}>X</button>
-                </div>
-              ))}
-            </>
+          {dataError && (
+            <div className="empty-state" style={{ marginBottom: "18px" }}>
+              {dataError}
+            </div>
           )}
-        </>
+
+          <section className="stats-strip" aria-label="Podsumowanie">
+            <div className="stat-card">
+              <span className="stat-label">Projekty</span>
+              <span className="stat-value">{projects.length}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Aktywne</span>
+              <span className="stat-value">{currentDoingCount}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Zakończone</span>
+              <span className="stat-value">{currentDoneCount}</span>
+            </div>
+          </section>
+
+          <section className="panel">
+            <h2 className="section-title">Nowy projekt</h2>
+            <div className="form-grid">
+            <label className="field">
+              Nazwa projektu
+              <input
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Nazwa"
+              />
+            </label>
+            <label className="field">
+              Opis
+              <input
+                value={projectDesc}
+                onChange={(e) => setProjectDesc(e.target.value)}
+                placeholder="Opis"
+              />
+            </label>
+            <button className="primary-button" onClick={handleAddProject}>
+              Dodaj
+            </button>
+            </div>
+          </section>
+
+          <div className="content-grid">
+            <div className="side-stack">
+              <section className="panel">
+              <h2 className="section-title">Lista projektów</h2>
+              <div className="list">
+                {projects.length === 0 ? (
+                  <div className="empty-state">
+                    Nie ma jeszcze projektów. Dodaj pierwszy projekt powyżej.
+                  </div>
+                ) : (
+                  projects.map((project) => (
+                    <article
+                      key={project.id}
+                      className={`project-card ${
+                        currentProject?.id === project.id ? "is-selected" : ""
+                      }`}
+                    >
+                      <div>
+                        <h3 className="item-title">{project.name}</h3>
+                        <p className="item-description">{project.description}</p>
+                        <div className="meta-row">
+                          <span className="pill pill-blue">
+                            Właściciel: {getUserLabel(project.userId)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="secondary-button"
+                          onClick={() => handleSelectProject(project.id)}
+                        >
+                          Wybierz
+                        </button>
+                        <button
+                          className="danger-button"
+                          onClick={() => handleDeleteProject(project.id)}
+                        >
+                          Usuń
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+
+              <section className="panel">
+                <h2 className="section-title">Użytkownicy</h2>
+                <div className="list compact-list">
+                  {allKnownUsers.map((knownUser) => (
+                    <article key={knownUser.id} className="user-card">
+                      <div>
+                        <h3 className="item-title">{knownUser.email}</h3>
+                        <p className="item-description">
+                          ID: <span className="mono-text">{knownUser.id}</span>
+                        </p>
+                      </div>
+                      <div className="meta-row">
+                        <span
+                          className={`role-pill role-${knownUser.role.toLowerCase()}`}
+                        >
+                          {roleLabels[knownUser.role]}
+                        </span>
+                        {knownUser.isBlocked && (
+                          <span className="pill pill-red">Zablokowany</span>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+          {currentProject && (
+            <section className="panel">
+              <div className="page-header">
+                <div>
+                  <p className="eyebrow">Wybrany projekt</p>
+                  <h2 className="section-title">{currentProject.name}</h2>
+                  <p className="item-description">
+                    Właściciel: {getUserLabel(currentProject.userId)}
+                  </p>
+                </div>
+                <span className="pill pill-blue">{stories.length} historyjek</span>
+              </div>
+
+              <div className="form-grid story-form-grid">
+                <label className="field">
+                  Historyjka/zadanie
+                  <input
+                    value={storyName}
+                    onChange={(e) => setStoryName(e.target.value)}
+                    placeholder="Nazwa"
+                  />
+                </label>
+                <label className="field">
+                  Opis
+                  <input
+                    value={storyDesc}
+                    onChange={(e) => setStoryDesc(e.target.value)}
+                    placeholder="Opis"
+                  />
+                </label>
+                <label className="field">
+                  Priorytet
+                  <select
+                    value={storyPriority}
+                    onChange={(e) => setStoryPriority(e.target.value as Priority)}
+                  >
+                    <option value="low">Niski</option>
+                    <option value="medium">Średni</option>
+                    <option value="high">Wysoki</option>
+                  </select>
+                </label>
+                <button className="primary-button" onClick={handleAddStory}>
+                  Dodaj
+                </button>
+              </div>
+
+              <div className="meta-row">
+                <span className="pill pill-amber">
+                  Do zrobienia: {currentTodoCount}
+                </span>
+                <span className="pill pill-blue">W trakcie: {currentDoingCount}</span>
+                <span className="pill pill-green">Zrobione: {currentDoneCount}</span>
+              </div>
+
+              <div className="list" style={{ marginTop: "16px" }}>
+                {stories.length === 0 ? (
+                  <div className="empty-state">
+                    Ten projekt nie ma jeszcze historyjek.
+                  </div>
+                ) : (
+                  stories.map((story) => (
+                    <article key={story.id} className="story-card">
+                      <div>
+                        <h3 className="item-title">{story.name}</h3>
+                        <p className="item-description">
+                          {story.description || "Brak opisu"}
+                        </p>
+                        <div className="meta-row">
+                          <span className="pill pill-blue">
+                            Status: {statusLabels[story.status]}
+                          </span>
+                          <span
+                            className={`pill ${
+                              story.priority === "high"
+                                ? "pill-red"
+                                : story.priority === "medium"
+                                  ? "pill-amber"
+                                  : "pill-green"
+                            }`}
+                          >
+                            Priorytet: {priorityLabels[story.priority]}
+                          </span>
+                          <span className="pill pill-green">
+                            Przypisano: {getUserLabel(story.userId)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="button-row">
+                        <label className="assignment-field">
+                          Osoba
+                          <select
+                            value={story.userId}
+                            onChange={(e) =>
+                              handleAssignStory(story, e.target.value)
+                            }
+                          >
+                            {assignableUsers.map((knownUser) => (
+                              <option key={knownUser.id} value={knownUser.id}>
+                                {knownUser.email}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      <button
+                        className="status-button"
+                        onClick={() => handleUpdateStoryStatus(story, "todo")}
+                      >
+                        Do zrobienia
+                      </button>
+                      <button
+                        className="status-button"
+                        onClick={() =>
+                          handleUpdateStoryStatus(story, "in_progress")
+                        }
+                      >
+                        W trakcie
+                      </button>
+                      <button
+                        className="status-button"
+                        onClick={() => handleUpdateStoryStatus(story, "done")}
+                      >
+                        Zrobione
+                      </button>
+                      <button
+                        className="danger-button"
+                        onClick={() => handleDeleteStory(story)}
+                      >
+                        Usuń
+                      </button>
+                    </div>
+                  </article>
+                  ))
+                )}
+              </div>
+            </section>
+          )}
+          {!currentProject && (
+            <section className="panel">
+              <p className="eyebrow">Brak wyboru</p>
+              <h2 className="section-title">Wybierz projekt</h2>
+              <p className="item-description">
+                Po wybraniu projektu zobaczysz tutaj formularz historyjek oraz
+                listę zadań.
+              </p>
+            </section>
+          )}
+          </div>
+        </main>
       )}
     </div>
   );

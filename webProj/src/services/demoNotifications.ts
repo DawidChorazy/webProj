@@ -1,68 +1,62 @@
-import notificationService from "./notificationService";
+import type { Notification } from "../types/notification";
 
-/**
- * Funkcja do testowania systemu powiadomień
- * Wytwarza przykładowe powiadomienia o różnych priorytetach
- */
-export function createDemoNotifications() {
+export function createDemoNotifications(recipientId: string): Notification[] {
+  const now = new Date().toISOString();
 
-  notificationService.createNotification(
-    "Utworzono nowy projekt",
-    'Projekt "Demo Android App" został właśnie utworzony przez Admina.',
-    "high",
-    1
-  );
-
-  setTimeout(() => {
-    notificationService.createNotification(
-      "Nowe zadanie w historyjce",
-      'Dodano nowe zadanie "Login Screen" do historyjki "User Authentication".',
-      "medium",
-      1
-    );
-  }, 1000);
-
-  setTimeout(() => {
-    notificationService.createNotification(
-      "Usunięto zadanie z historyjki",
-      'Zadanie "Old API Endpoint" zostało usunięte z projektu.',
-      "medium",
-      1
-    );
-  }, 2000);
-
-  setTimeout(() => {
-    notificationService.createNotification(
-      "Zadanie zostało oznaczone jako ukończone",
-      'Status zadania "Database Setup" został zmieniony na "done".',
-      "medium",
-      1
-    );
-  }, 3000);
-
-  setTimeout(() => {
-    notificationService.createNotification(
-      "Zadanie jest w trakcie realizacji",
-      'Status zadania "Frontend Implementation" został zmieniony na "doing".',
-      "low",
-      1
-    );
-  }, 4000);
-
-  setTimeout(() => {
-    notificationService.createNotification(
-      "Krytyczne powiadomienie",
-      "Stanowisko administratora wymaga natychmiastowej uwagi!",
-      "high",
-      1
-    );
-  }, 5000);
-}
-
-export function testNotificationService() {
-  console.log("=== Test Serwisu Powiadomień ===");
-  console.log("Wszystkie powiadomienia:", notificationService.getNotifications());
-  console.log("Powiadomienia użytkownika:", notificationService.getUserNotifications());
-  console.log("Nieprzeczytane:", notificationService.getUnreadNotifications());
-  console.log("Liczba nieprzeczytanych:", notificationService.getUnreadCount());
+  return [
+    {
+      id: "demo_project_created",
+      title: "Utworzono nowy projekt",
+      message: "Utworzono projekt demonstracyjny.",
+      date: now,
+      priority: "high",
+      isRead: false,
+      recipientId,
+    },
+    {
+      id: "demo_story_assignment",
+      title: "Przypisano Cię do historyjki",
+      message: "Zostałeś przypisany do historyjki demonstracyjnej.",
+      date: now,
+      priority: "high",
+      isRead: false,
+      recipientId,
+    },
+    {
+      id: "demo_task_added",
+      title: "Nowe zadanie w historyjce",
+      message: "Do historyjki dodano zadanie demonstracyjne.",
+      date: now,
+      priority: "medium",
+      isRead: false,
+      recipientId,
+    },
+    {
+      id: "demo_task_removed",
+      title: "Usunięto zadanie z historyjki",
+      message: "Z historyjki usunięto zadanie demonstracyjne.",
+      date: now,
+      priority: "medium",
+      isRead: false,
+      recipientId,
+    },
+    {
+      id: "demo_task_done",
+      title: "Zmieniono status zadania",
+      message: "Zadanie demonstracyjne ma status done.",
+      date: now,
+      priority: "medium",
+      isRead: false,
+      recipientId,
+    },
+    {
+      id: "demo_task_doing",
+      title: "Zmieniono status zadania",
+      message: "Zadanie demonstracyjne ma status doing.",
+      date: now,
+      priority: "low",
+      isRead: false,
+      recipientId,
+    },
+  ];
 }

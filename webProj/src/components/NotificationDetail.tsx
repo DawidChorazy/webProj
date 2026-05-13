@@ -1,210 +1,124 @@
 import { useEffect, useState } from "react";
 import notificationService from "../services/notificationService";
-import type { Notification } from "../types/notification";
+import type { Notification, NotificationPriority } from "../types/notification";
 
 interface NotificationDetailProps {
   notificationId: string | null;
+  recipientId: string;
   onBack: () => void;
 }
 
+const priorityLabels: Record<NotificationPriority, string> = {
+  high: "Wysoki",
+  medium: "Średni",
+  low: "Niski",
+};
+
 export function NotificationDetail({
   notificationId,
+  recipientId,
   onBack,
 }: NotificationDetailProps) {
   const [notification, setNotification] = useState<Notification | null>(null);
 
   useEffect(() => {
-    if (notificationId) {
-      const notif = notificationService.getNotificationById(notificationId);
-      setNotification(notif || null);
+    let isMounted = true;
 
-      // Mark as read when viewing details
-      if (notif && !notif.isRead) {
-        notificationService.markAsRead(notificationId);
+    const refresh = () => {
+      if (!notificationId) {
+        setNotification(null);
+        return;
       }
+
+      void notificationService.getNotificationById(notificationId).then((selected) => {
+        if (!isMounted) return;
+
+        if (!selected || selected.recipientId !== recipientId) {
+          setNotification(null);
+          return;
+        }
+
+        setNotification(selected);
+      });
+    };
+
+    const unsubscribe = notificationService.subscribe(refresh);
+
+    if (notificationId) {
+      void notificationService.getNotificationById(notificationId).then((selected) => {
+        if (selected && selected.recipientId === recipientId && !selected.isRead) {
+          void notificationService.markAsRead(selected.id);
+        }
+      });
     }
-  }, [notificationId]);
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [notificationId, recipientId]);
+
+  const handleMarkAsRead = () => {
+    if (!notification) return;
+    void notificationService.markAsRead(notification.id);
+  };
 
   if (!notification) {
     return (
-      <div
-        style={{
-          padding: "20px",
-          textAlign: "center",
-          color: "#999",
-        }}
-      >
-        Powiadomienie nie zostało znalezione
-      </div>
+      <section className="notification-detail">
+        <div className="notification-detail-card">
+        <button className="secondary-button" onClick={onBack}>Powrót</button>
+        <p>Powiadomienie nie zostało znalezione.</p>
+        </div>
+      </section>
     );
   }
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "high":
-        return "#f44336";
-      case "medium":
-        return "#ff9800";
-      case "low":
-        return "#4caf50";
-      default:
-        return "#999";
-    }
-  };
-
-  const getPriorityLabel = (priority: string) => {
-    switch (priority) {
-      case "high":
-        return "Wysoki";
-      case "medium":
-        return "Średni";
-      case "low":
-        return "Niski";
-      default:
-        return priority;
-    }
-  };
-
   return (
-    <div
-      style={{
-        width: "100%",
-        maxWidth: "600px",
-        margin: "0 auto",
-        padding: "20px",
-      }}
-    >
-      {/* Back button */}
-      <button
-        onClick={onBack}
-        style={{
-          marginBottom: "20px",
-          padding: "10px 15px",
-          background: "#f5f5f5",
-          border: "1px solid #ddd",
-          borderRadius: "4px",
-          cursor: "pointer",
-          fontSize: "14px",
-        }}
-      >
-        ← Powrót
+    <section className="notification-detail">
+      <div className={`notification-detail-card priority-${notification.priority}`}>
+      <button className="secondary-button" onClick={onBack}>
+        Powrót do powiadomień
       </button>
 
-      {/* Notification card */}
-      <div
-        style={{
-          background: "white",
-          border: `3px solid ${getPriorityColor(notification.priority)}`,
-          borderRadius: "8px",
-          padding: "30px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-        }}
-      >
-        {/* Header */}
-        <div style={{ marginBottom: "20px" }}>
-          <h1 style={{ margin: "0 0 10px 0", fontSize: "28px" }}>
-            {notification.title}
-          </h1>
-          <div
-            style={{
-              display: "flex",
-              gap: "15px",
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <span
-              style={{
-                background: getPriorityColor(notification.priority),
-                color: "white",
-                padding: "6px 12px",
-                borderRadius: "20px",
-                fontSize: "12px",
-                fontWeight: "bold",
-              }}
-            >
-              Priorytet: {getPriorityLabel(notification.priority)}
-            </span>
-            <span style={{ color: "#999", fontSize: "13px" }}>
-              {new Date(notification.date).toLocaleString("pl-PL")}
-            </span>
-            {notification.isRead && (
-              <span
-                style={{
-                  background: "#e0e0e0",
-                  color: "#666",
-                  padding: "4px 10px",
-                  borderRadius: "4px",
-                  fontSize: "12px",
-                }}
-              >
-                ✓ Przeczytane
-              </span>
-            )}
-          </div>
+      <div style={{ marginTop: "20px" }}>
+        <h1 className="page-title">
+          {notification.title}
+        </h1>
+        <div className="meta-row">
+          <span className="pill pill-amber">
+            Priorytet: {priorityLabels[notification.priority]}
+          </span>
+          <span className="pill pill-green">
+            {new Date(notification.date).toLocaleString("pl-PL")}
+          </span>
+          <span className="pill pill-blue">
+            {notification.isRead ? "Przeczytane" : "Nieprzeczytane"}
+          </span>
         </div>
 
-        <hr style={{ margin: "20px 0", border: "none", borderTop: "1px solid #eee" }} />
-
-        {/* Content */}
-        <div
-          style={{
-            fontSize: "16px",
-            lineHeight: "1.6",
-            color: "#333",
-            marginBottom: "30px",
-            whiteSpace: "pre-wrap",
-            wordWrap: "break-word",
-          }}
-        >
+        <p className="notification-message">
           {notification.message}
-        </div>
+        </p>
 
-        {/* Actions */}
-        <div
-          style={{
-            display: "flex",
-            gap: "10px",
-            justifyContent: "flex-end",
-          }}
-        >
+        <div className="button-row">
           {!notification.isRead && (
-            <button
-              onClick={() =>
-                notificationService.markAsRead(notification.id)
-              }
-              style={{
-                padding: "10px 20px",
-                background: "#2196F3",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontSize: "14px",
-              }}
-            >
+            <button className="secondary-button" onClick={handleMarkAsRead}>
               Oznacz jako przeczytane
             </button>
           )}
           <button
+            className="danger-button"
             onClick={() => {
-              notificationService.deleteNotification(notification.id);
+              void notificationService.deleteNotification(notification.id);
               onBack();
-            }}
-            style={{
-              padding: "10px 20px",
-              background: "#f44336",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "14px",
             }}
           >
             Usuń
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </section>
   );
 }

@@ -1,54 +1,48 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import notificationService from "../services/notificationService";
 
 interface NotificationBadgeProps {
+  recipientId: string;
   onClick?: () => void;
 }
 
-export function NotificationBadge({ onClick }: NotificationBadgeProps) {
+export function NotificationBadge({
+  recipientId,
+  onClick,
+}: NotificationBadgeProps) {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    const unsubscribe = notificationService.subscribe(() => {
-      const count = notificationService.getUnreadCount();
-      setUnreadCount(count);
-    });
+    let isMounted = true;
 
-    return unsubscribe;
-  }, []);
+    const refresh = () => {
+      void notificationService.getUnreadCount(recipientId).then((count) => {
+        if (isMounted) {
+          setUnreadCount(count);
+        }
+      });
+    };
+
+    const unsubscribe = notificationService.subscribe(refresh);
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [recipientId]);
 
   return (
     <button
       onClick={onClick}
-      style={{
-        position: "relative",
-        background: "none",
-        border: "none",
-        cursor: "pointer",
-        fontSize: "16px",
-        color: "inherit",
-        padding: "5px 10px",
-      }}
-      title="Notifications"
+      className="notification-button"
+      title="Powiadomienia"
+      aria-label="Przejdź do powiadomień"
     >
-      🔔
+      <span className="notification-icon" aria-hidden="true">!</span>
+      <span>Powiadomienia</span>
       {unreadCount > 0 && (
         <span
-          style={{
-            position: "absolute",
-            top: "-5px",
-            right: "-5px",
-            background: "#ff4444",
-            color: "white",
-            borderRadius: "50%",
-            width: "20px",
-            height: "20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "12px",
-            fontWeight: "bold",
-          }}
+          aria-label={`${unreadCount} nieprzeczytanych powiadomień`}
+          className="notification-count"
         >
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
