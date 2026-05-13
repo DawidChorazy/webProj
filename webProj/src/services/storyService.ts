@@ -1,6 +1,6 @@
 import { storageFactory } from "../storage/storageFactory";
 
-export type Status = "todo" | "in_progress" | "done";
+export type Status = "todo" | "doing" | "done";
 export type Priority = "low" | "medium" | "high";
 
 export interface Story {
@@ -14,12 +14,21 @@ export interface Story {
   createdAt: string;
 }
 
+type StoredStory = Omit<Story, "status"> & {
+  status: Status | "in_progress";
+};
+
 const storage = storageFactory();
 const KEY = "stories";
 const CURRENT_PROJECT_KEY = "currentProject";
 
 export const getStories = async (): Promise<Story[]> => {
-  return (await storage.get<Story[]>(KEY)) ?? [];
+  const stories = (await storage.get<StoredStory[]>(KEY)) ?? [];
+
+  return stories.map((story) => ({
+    ...story,
+    status: story.status === "in_progress" ? "doing" : story.status,
+  }));
 };
 
 export const getStoriesForCurrentProject = async (): Promise<Story[]> => {
@@ -65,6 +74,17 @@ export const updateStoryStatus = async (
   await storage.set(KEY, stories);
 };
 
+export const updateStory = async (
+  id: string,
+  data: Pick<Story, "name" | "description" | "priority">
+): Promise<void> => {
+  const stories = (await getStories()).map((story) =>
+    story.id === id ? { ...story, ...data } : story
+  );
+
+  await storage.set(KEY, stories);
+};
+
 export const assignStoryUser = async (
   id: string,
   userId: string
@@ -78,5 +98,10 @@ export const assignStoryUser = async (
 
 export const deleteStory = async (id: string): Promise<void> => {
   const stories = (await getStories()).filter((story) => story.id !== id);
+  await storage.set(KEY, stories);
+};
+
+export const deleteStoriesForProject = async (projectId: string): Promise<void> => {
+  const stories = (await getStories()).filter((story) => story.projectId !== projectId);
   await storage.set(KEY, stories);
 };

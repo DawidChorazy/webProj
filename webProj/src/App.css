@@ -37,6 +37,16 @@
   flex-wrap: wrap;
 }
 
+.button-row {
+  justify-content: flex-start;
+}
+
+.story-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .user-tools {
   margin-left: auto;
   justify-content: flex-end;
@@ -71,9 +81,14 @@
   background: rgba(37, 99, 235, 0.22);
 }
 
-.role-user {
+.role-developer {
   color: #bbf7d0;
   background: rgba(22, 163, 74, 0.2);
+}
+
+.role-devops {
+  color: #fde68a;
+  background: rgba(217, 119, 6, 0.2);
 }
 
 .role-guest {
@@ -292,7 +307,15 @@
 }
 
 .story-form-grid {
-  grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) 140px auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.4fr) 140px auto;
+}
+
+.task-form-grid {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+.task-edit-grid {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
 }
 
 .field {
@@ -304,7 +327,10 @@
 }
 
 .field input,
-.field select {
+.field select,
+.edit-stack input,
+.edit-stack select,
+.user-actions select {
   width: 100%;
   height: 42px;
   padding: 0 12px;
@@ -351,6 +377,7 @@
 .project-card,
 .story-card,
 .user-card,
+.task-card,
 .notification-card {
   display: grid;
   gap: 14px;
@@ -477,8 +504,8 @@
 }
 
 .project-card {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
 }
 
 .project-card.is-selected {
@@ -487,12 +514,109 @@
 }
 
 .story-card {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 
 .user-card {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.user-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.user-actions select {
+  min-width: 150px;
+}
+
+.edit-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.story-board,
+.kanban-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.kanban-column {
+  min-width: 0;
+  padding: 14px;
+  background: color-mix(in srgb, var(--panel-bg) 88%, var(--field-bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.story-board .kanban-column {
+  padding: 12px;
+}
+
+.column-title {
+  margin: 0 0 12px;
+  color: var(--strong-text);
+  font-size: 15px;
+}
+
+.task-section {
+  margin-top: 24px;
+}
+
+.compact-header {
+  margin-bottom: 14px;
+}
+
+.task-card {
+  padding: 12px;
+}
+
+.task-card.is-selected {
+  border-color: #2563eb;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
+}
+
+.task-open-button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.task-detail {
+  margin-top: 24px;
+  padding: 20px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  color: var(--muted-text);
+  font-size: 14px;
+}
+
+.detail-actions {
+  margin-top: 16px;
+}
+
+.task-form-grid .primary-button,
+.task-edit-grid .primary-button,
+.task-edit-grid .secondary-button {
+  align-self: end;
 }
 
 .mono-text {
@@ -504,7 +628,6 @@
 
 .assignment-field {
   display: grid;
-  min-width: 190px;
   gap: 5px;
   color: #42526b;
   font-size: 12px;
@@ -512,6 +635,7 @@
 }
 
 .assignment-field select {
+  width: 100%;
   height: 38px;
   padding: 0 10px;
   color: var(--page-text);
@@ -524,11 +648,13 @@
   margin: 0;
   color: var(--strong-text);
   font-size: 16px;
+  overflow-wrap: anywhere;
 }
 
 .item-description {
   margin: 6px 0 0;
   color: var(--muted-text);
+  overflow-wrap: anywhere;
 }
 
 .meta-row {
@@ -541,11 +667,37 @@
 .pill {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   min-height: 24px;
   padding: 3px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 800;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.compact-pill {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-actions .assignment-field {
+  grid-column: 1 / -1;
+}
+
+.story-actions .status-button,
+.story-actions .secondary-button,
+.story-actions .danger-button,
+.story-actions .primary-button {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 6px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .pill-blue {
@@ -613,6 +765,11 @@
   .stats-strip,
   .form-grid,
   .story-form-grid,
+  .task-form-grid,
+  .task-edit-grid,
+  .story-board,
+  .kanban-board,
+  .detail-grid,
   .project-card,
   .story-card {
     grid-template-columns: 1fr;

@@ -38,6 +38,17 @@ export const deleteProject = async (id: string): Promise<void> => {
   await storage.set(KEY, projects);
 };
 
+export const updateProject = async (
+  id: string,
+  data: Pick<Project, "name" | "description">
+): Promise<void> => {
+  const projects = (await getProjects()).map((project) =>
+    project.id === id ? { ...project, ...data } : project
+  );
+
+  await storage.set(KEY, projects);
+};
+
 export const setCurrentProject = async (id: string | null): Promise<void> => {
   await storage.set(CURRENT_PROJECT_KEY, id);
 };

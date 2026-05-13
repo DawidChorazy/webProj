@@ -86,18 +86,139 @@ function parseEmailList(s) {
 
 const adminEmails = new Set(parseEmailList(process.env.ADMIN_EMAILS));
 const blockedEmails = new Set(parseEmailList(process.env.BLOCKED_EMAILS));
+const validRoles = new Set(["guest", "admin", "devops", "developer"]);
 
-function roleForEmail(email, existingRole = "Guest") {
-  return adminEmails.has(email.toLowerCase()) ? "Admin" : existingRole;
+function normalizeRole(role) {
+  const normalized = String(role || "guest").toLowerCase();
+
+  if (normalized === "user") return "developer";
+  if (normalized === "super_admin") return "admin";
+
+  return validRoles.has(normalized) ? normalized : "guest";
+}
+
+function roleForEmail(email, existingRole = "guest") {
+  return adminEmails.has(email.toLowerCase()) ? "admin" : normalizeRole(existingRole);
+}
+
+function isAdminUser(user) {
+  return user && roleForEmail(user.email, user.role) === "admin";
+}
+
+function makeNotification(title, message, priority, recipientId) {
+  return {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    title,
+    message,
+    date: new Date().toISOString(),
+    priority,
+    isRead: false,
+    recipientId,
+  };
+}
+
+async function appendNotifications(notifications) {
+  if (notifications.length === 0) return;
+
+  const collection = await getStorageCollection();
+  const document = await collection.findOne({ key: "notifications" });
+  const existing = Array.isArray(document?.value) ? document.value : [];
+
+  await collection.updateOne(
+    { key: "notifications" },
+    {
+      $set: {
+        key: "notifications",
+        value: [...notifications, ...existing],
+        updatedAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+}
+
+async function notifyAdminsAboutNewUser(createdUser) {
+  try {
+    const collection = await getUsersCollection();
+    const adminUsers = await collection
+      .find({ role: "admin", isBlocked: { $ne: true } })
+      .project({ _id: 0, id: 1 })
+      .toArray();
+
+    const recipientIds = Array.from(
+      new Set(
+        [...adminUsers, ...usersByEmail.values()]
+          .filter((user) => user.id && isAdminUser(user) && !user.isBlocked)
+          .map((user) => user.id)
+      )
+    );
+
+    await appendNotifications(
+      recipientIds.map((recipientId) =>
+        makeNotification(
+          "Nowe konto w systemie",
+          `Użytkownik ${createdUser.email} czeka na zatwierdzenie konta.`,
+          "high",
+          recipientId
+        )
+      )
+    );
+  } catch (error) {
+    console.warn(
+      "[users] Could not notify admins about new user:",
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+
+async function resolveUserFromSession(sessionUser) {
+  const email = sessionUser.email;
+  const emailLower = email.toLowerCase();
+  let dbUser = null;
+
+  try {
+    const collection = await getUsersCollection();
+    dbUser = await collection.findOne(
+      { emailLower },
+      { projection: { _id: 0, id: 1, email: 1, role: 1, isBlocked: 1 } }
+    );
+  } catch {
+    dbUser = null;
+  }
+
+  const user = {
+    id: dbUser?.id || sessionUser.id,
+    email: dbUser?.email || email,
+    role: roleForEmail(email, dbUser?.role || sessionUser.role),
+    isBlocked:
+      blockedEmails.has(emailLower) ||
+      Boolean(dbUser?.isBlocked || sessionUser.isBlocked),
+  };
+
+  usersByEmail.set(emailLower, user);
+  return user;
 }
 
 async function upsertUserFromProfile(profile) {
   const email = (profile.emails && profile.emails[0] && profile.emails[0].value) || "";
   if (!email) return null;
 
-  const existing = usersByEmail.get(email.toLowerCase());
-  const isBlocked = blockedEmails.has(email.toLowerCase());
+  let existing = usersByEmail.get(email.toLowerCase());
+
+  try {
+    const collection = await getUsersCollection();
+    existing =
+      (await collection.findOne(
+        { emailLower: email.toLowerCase() },
+        { projection: { _id: 0, id: 1, email: 1, role: 1, isBlocked: 1 } }
+      )) || existing;
+  } catch {
+    // The app can still authenticate even if the users collection is temporarily unavailable.
+  }
+
+  const isBlocked = blockedEmails.has(email.toLowerCase()) || Boolean(existing?.isBlocked);
   const role = roleForEmail(email, existing?.role);
+  const isFirstLogin = !existing;
 
   const user = {
     id: existing?.id || profile.id || randomUUID(),
@@ -125,6 +246,10 @@ async function upsertUserFromProfile(profile) {
       },
       { upsert: true }
     );
+
+    if (isFirstLogin && role === "guest") {
+      await notifyAdminsAboutNewUser(user);
+    }
   } catch (error) {
     console.warn(
       "[users] Could not persist OAuth user:",
@@ -216,38 +341,30 @@ app.get(
   }
 );
 
-app.get("/api/me", (req, res) => {
+app.get("/api/me", async (req, res) => {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
     return res.status(401).json({ error: "unauthorized" });
   }
-  const u = req.user;
-  const role = roleForEmail(u.email, u.role);
-  const isBlocked = blockedEmails.has(u.email.toLowerCase());
-
-  req.user = {
-    ...u,
-    role,
-    isBlocked,
-  };
+  const user = await resolveUserFromSession(req.user);
+  req.user = user;
 
   res.json({
-    id: u.id,
-    email: u.email,
-    role,
-    isBlocked,
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    isBlocked: user.isBlocked,
   });
 });
 
 app.get("/api/users", requireAuthenticated, async (req, res) => {
-  const sessionUser = req.user;
-  const normalizedSessionUser = {
-    id: sessionUser.id,
-    email: sessionUser.email,
-    role: roleForEmail(sessionUser.email, sessionUser.role),
-    isBlocked: blockedEmails.has(sessionUser.email.toLowerCase()),
-  };
+  const normalizedSessionUser = await resolveUserFromSession(req.user);
+  req.user = normalizedSessionUser;
 
-  usersByEmail.set(sessionUser.email.toLowerCase(), normalizedSessionUser);
+  if (!isAdminUser(normalizedSessionUser)) {
+    return res.status(403).json({ error: "forbidden" });
+  }
+
+  usersByEmail.set(normalizedSessionUser.email.toLowerCase(), normalizedSessionUser);
 
   try {
     const collection = await getUsersCollection();
@@ -263,7 +380,7 @@ app.get("/api/users", requireAuthenticated, async (req, res) => {
         id: user.id,
         email: user.email,
         role: roleForEmail(user.email, user.role),
-        isBlocked: blockedEmails.has(user.email.toLowerCase()),
+        isBlocked: blockedEmails.has(user.email.toLowerCase()) || Boolean(user.isBlocked),
       });
     });
 
@@ -279,10 +396,67 @@ app.get("/api/users", requireAuthenticated, async (req, res) => {
           id: knownUser.id,
           email: knownUser.email,
           role: roleForEmail(knownUser.email, knownUser.role),
-          isBlocked: blockedEmails.has(knownUser.email.toLowerCase()),
+          isBlocked:
+            blockedEmails.has(knownUser.email.toLowerCase()) ||
+            Boolean(knownUser.isBlocked),
         }))
         .sort((a, b) => a.email.localeCompare(b.email, "pl"))
     );
+  }
+});
+
+app.patch("/api/users/:id", requireAuthenticated, async (req, res) => {
+  const currentUser = await resolveUserFromSession(req.user);
+  req.user = currentUser;
+
+  if (!isAdminUser(currentUser)) {
+    return res.status(403).json({ error: "forbidden" });
+  }
+
+  const role = req.body.role ? normalizeRole(req.body.role) : undefined;
+  const hasBlockedValue = typeof req.body.isBlocked === "boolean";
+
+  try {
+    const collection = await getUsersCollection();
+    const existing = await collection.findOne(
+      { id: req.params.id },
+      { projection: { _id: 0, id: 1, email: 1, role: 1, isBlocked: 1 } }
+    );
+
+    if (!existing) {
+      return res.status(404).json({ error: "not_found" });
+    }
+
+    const update = {
+      updatedAt: new Date(),
+    };
+
+    if (role) {
+      update.role = roleForEmail(existing.email, role);
+    }
+
+    if (hasBlockedValue && existing.id !== currentUser.id) {
+      update.isBlocked = req.body.isBlocked;
+    }
+
+    await collection.updateOne({ id: req.params.id }, { $set: update });
+
+    const updatedUser = {
+      ...existing,
+      ...update,
+      role: roleForEmail(existing.email, update.role || existing.role),
+      isBlocked:
+        blockedEmails.has(existing.email.toLowerCase()) ||
+        Boolean(update.isBlocked ?? existing.isBlocked),
+    };
+
+    usersByEmail.set(existing.email.toLowerCase(), updatedUser);
+    res.json(updatedUser);
+  } catch (error) {
+    res.status(503).json({
+      error: "database_unavailable",
+      message: error instanceof Error ? error.message : "Database unavailable",
+    });
   }
 });
 

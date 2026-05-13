@@ -140,8 +140,8 @@ class NotificationService {
     assigneeId: UserID
   ): Promise<void> {
     await this.createNotification(
-      "Przypisano Cię do historyjki",
-      `Zostałeś przypisany do historyjki "${storyName}".`,
+      "Przypisano Cię do historyjki/zadania",
+      `Zostałeś przypisany do "${storyName}".`,
       "high",
       assigneeId
     );
