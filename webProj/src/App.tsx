@@ -50,6 +50,13 @@ interface User {
   isBlocked: boolean;
 }
 
+declare global {
+  interface Window {
+    __MANAGEME_E2E_USER__?: User;
+    __MANAGEME_E2E_USERS__?: User[];
+  }
+}
+
 type KnownUser = User;
 type ViewMode = "projects" | "notifications" | "notificationDetail";
 type ThemeMode = "system" | "light" | "dark";
@@ -77,6 +84,10 @@ const statusColumns: Status[] = ["todo", "doing", "done"];
 const editableRoles: UserRole[] = ["guest", "developer", "devops", "admin"];
 
 async function loadKnownUsers(currentUser: User): Promise<KnownUser[]> {
+  if (window.__MANAGEME_E2E_USERS__) {
+    return window.__MANAGEME_E2E_USERS__;
+  }
+
   try {
     const res = await fetch("/api/users", {
       credentials: "include",
@@ -207,6 +218,15 @@ function App() {
   useEffect(() => {
     async function loadUser() {
       try {
+        if (window.__MANAGEME_E2E_USER__) {
+          const e2eUser = window.__MANAGEME_E2E_USER__;
+          setUser(e2eUser);
+          setKnownUsers(await loadKnownUsers(e2eUser));
+          await refreshWorkspaceData();
+          setDataError(null);
+          return;
+        }
+
         const res = await fetch("/api/me", {
           credentials: "include",
           cache: "no-store",
@@ -724,6 +744,7 @@ function App() {
               <label className="field">
                 Nazwa projektu
                 <input
+                  data-testid="project-name-input"
                   value={projectName}
                   onChange={(event) => setProjectName(event.target.value)}
                   placeholder="Nazwa"
@@ -732,12 +753,17 @@ function App() {
               <label className="field">
                 Opis
                 <input
+                  data-testid="project-description-input"
                   value={projectDesc}
                   onChange={(event) => setProjectDesc(event.target.value)}
                   placeholder="Opis"
                 />
               </label>
-              <button className="primary-button" onClick={handleAddProject}>
+              <button
+                className="primary-button"
+                data-testid="project-add-button"
+                onClick={handleAddProject}
+              >
                 Dodaj
               </button>
             </div>
@@ -756,6 +782,7 @@ function App() {
                     projects.map((project) => (
                       <article
                         key={project.id}
+                        data-testid="project-card"
                         className={`project-card ${
                           currentProject?.id === project.id ? "is-selected" : ""
                         }`}
@@ -763,10 +790,12 @@ function App() {
                         {editingProjectId === project.id ? (
                           <div className="edit-stack">
                             <input
+                              data-testid="project-edit-name-input"
                               value={editProjectName}
                               onChange={(event) => setEditProjectName(event.target.value)}
                             />
                             <input
+                              data-testid="project-edit-description-input"
                               value={editProjectDesc}
                               onChange={(event) => setEditProjectDesc(event.target.value)}
                             />
@@ -788,6 +817,7 @@ function App() {
                             <>
                               <button
                                 className="primary-button"
+                                data-testid="project-save-button"
                                 onClick={() => handleSaveProject(project.id)}
                               >
                                 Zapisz
@@ -803,18 +833,21 @@ function App() {
                             <>
                               <button
                                 className="secondary-button"
+                                data-testid="project-select-button"
                                 onClick={() => handleSelectProject(project.id)}
                               >
                                 Wybierz
                               </button>
                               <button
                                 className="secondary-button"
+                                data-testid="project-edit-button"
                                 onClick={() => startProjectEdit(project)}
                               >
                                 Edytuj
                               </button>
                               <button
                                 className="danger-button"
+                                data-testid="project-delete-button"
                                 onClick={() => handleDeleteProject(project.id)}
                               >
                                 Usuń
@@ -893,6 +926,7 @@ function App() {
                     Historyjka
                     <input
                       value={storyName}
+                      data-testid="story-name-input"
                       onChange={(event) => setStoryName(event.target.value)}
                       placeholder="Nazwa"
                     />
@@ -901,6 +935,7 @@ function App() {
                     Opis
                     <input
                       value={storyDesc}
+                      data-testid="story-description-input"
                       onChange={(event) => setStoryDesc(event.target.value)}
                       placeholder="Opis"
                     />
@@ -909,6 +944,7 @@ function App() {
                     Priorytet
                     <select
                       value={storyPriority}
+                      data-testid="story-priority-select"
                       onChange={(event) => setStoryPriority(event.target.value as Priority)}
                     >
                       <option value="low">Niski</option>
@@ -916,7 +952,11 @@ function App() {
                       <option value="high">Wysoki</option>
                     </select>
                   </label>
-                  <button className="primary-button" onClick={handleAddStory}>
+                  <button
+                    className="primary-button"
+                    data-testid="story-add-button"
+                    onClick={handleAddStory}
+                  >
                     Dodaj
                   </button>
                 </div>
@@ -937,18 +977,25 @@ function App() {
                         {stories
                           .filter((story) => story.status === status)
                           .map((story) => (
-                            <article key={story.id} className="story-card">
+                            <article
+                              key={story.id}
+                              className="story-card"
+                              data-testid="story-card"
+                            >
                               {editingStoryId === story.id ? (
                                 <div className="edit-stack">
                                   <input
+                                    data-testid="story-edit-name-input"
                                     value={editStoryName}
                                     onChange={(event) => setEditStoryName(event.target.value)}
                                   />
                                   <input
+                                    data-testid="story-edit-description-input"
                                     value={editStoryDesc}
                                     onChange={(event) => setEditStoryDesc(event.target.value)}
                                   />
                                   <select
+                                    data-testid="story-edit-priority-select"
                                     value={editStoryPriority}
                                     onChange={(event) =>
                                       setEditStoryPriority(event.target.value as Priority)
@@ -984,6 +1031,7 @@ function App() {
                                   <>
                                     <button
                                       className="primary-button"
+                                      data-testid="story-save-button"
                                       onClick={() => handleSaveStory(story.id)}
                                     >
                                       Zapisz
@@ -1000,6 +1048,7 @@ function App() {
                                     <label className="assignment-field">
                                       Właściciel
                                       <select
+                                        data-testid="story-owner-select"
                                         value={story.userId}
                                         onChange={(event) =>
                                           handleAssignStory(story, event.target.value)
@@ -1017,6 +1066,7 @@ function App() {
                                     <label className="assignment-field">
                                       Status
                                       <select
+                                        data-testid="story-status-select"
                                         value={story.status}
                                         onChange={(event) =>
                                           handleUpdateStoryStatus(
@@ -1034,12 +1084,14 @@ function App() {
                                     </label>
                                     <button
                                       className="secondary-button"
+                                      data-testid="story-edit-button"
                                       onClick={() => startStoryEdit(story)}
                                     >
                                       Edytuj
                                     </button>
                                     <button
                                       className="danger-button"
+                                      data-testid="story-delete-button"
                                       onClick={() => handleDeleteStory(story)}
                                     >
                                       Usuń
@@ -1061,6 +1113,7 @@ function App() {
                       Historyjka
                       <select
                         value={taskStoryId || stories[0]?.id || ""}
+                        data-testid="task-story-select"
                         onChange={(event) => setTaskStoryId(event.target.value)}
                       >
                         <option value="">Wybierz historyjkę</option>
@@ -1075,6 +1128,7 @@ function App() {
                       Nazwa
                       <input
                         value={taskName}
+                        data-testid="task-name-input"
                         onChange={(event) => setTaskName(event.target.value)}
                         placeholder="Nazwa zadania"
                       />
@@ -1083,6 +1137,7 @@ function App() {
                       Opis
                       <input
                         value={taskDesc}
+                        data-testid="task-description-input"
                         onChange={(event) => setTaskDesc(event.target.value)}
                         placeholder="Opis"
                       />
@@ -1091,6 +1146,7 @@ function App() {
                       Priorytet
                       <select
                         value={taskPriority}
+                        data-testid="task-priority-select"
                         onChange={(event) => setTaskPriority(event.target.value as Priority)}
                       >
                         <option value="low">Niski</option>
@@ -1104,11 +1160,13 @@ function App() {
                         type="number"
                         min="0"
                         value={taskEstimatedHours}
+                        data-testid="task-estimated-hours-input"
                         onChange={(event) => setTaskEstimatedHours(Number(event.target.value))}
                       />
                     </label>
                     <button
                       className="primary-button"
+                      data-testid="task-add-button"
                       onClick={handleAddTask}
                       disabled={stories.length === 0}
                     >
@@ -1135,12 +1193,14 @@ function App() {
                             .map((task) => (
                               <article
                                 key={task.id}
+                                data-testid="task-card"
                                 className={`task-card ${
                                   selectedTaskId === task.id ? "is-selected" : ""
                                 }`}
                               >
                                 <button
                                   className="task-open-button"
+                                  data-testid="task-open-button"
                                   onClick={() => setSelectedTaskId(task.id)}
                                 >
                                   <span className="item-title">{task.name}</span>
@@ -1196,6 +1256,7 @@ function App() {
                           Nazwa
                           <input
                             value={editTaskName}
+                            data-testid="task-edit-name-input"
                             onChange={(event) => setEditTaskName(event.target.value)}
                           />
                         </label>
@@ -1203,6 +1264,7 @@ function App() {
                           Opis
                           <input
                             value={editTaskDesc}
+                            data-testid="task-edit-description-input"
                             onChange={(event) => setEditTaskDesc(event.target.value)}
                           />
                         </label>
@@ -1210,6 +1272,7 @@ function App() {
                           Priorytet
                           <select
                             value={editTaskPriority}
+                            data-testid="task-edit-priority-select"
                             onChange={(event) =>
                               setEditTaskPriority(event.target.value as Priority)
                             }
@@ -1225,6 +1288,7 @@ function App() {
                             type="number"
                             min="0"
                             value={editTaskEstimatedHours}
+                            data-testid="task-edit-estimated-hours-input"
                             onChange={(event) =>
                               setEditTaskEstimatedHours(Number(event.target.value))
                             }
@@ -1236,6 +1300,7 @@ function App() {
                             type="number"
                             min="0"
                             value={editTaskSpentHours}
+                            data-testid="task-edit-spent-hours-input"
                             onChange={(event) =>
                               setEditTaskSpentHours(Number(event.target.value))
                             }
@@ -1243,6 +1308,7 @@ function App() {
                         </label>
                         <button
                           className="primary-button"
+                          data-testid="task-save-button"
                           onClick={() => handleSaveTask(selectedTask.id)}
                         >
                           Zapisz
@@ -1289,6 +1355,7 @@ function App() {
                             Przypisz osobę
                             <select
                               value={selectedTask.responsibleUserId ?? ""}
+                              data-testid="task-assignee-select"
                               onChange={(event) =>
                                 handleAssignTask(selectedTask, event.target.value)
                               }
@@ -1305,6 +1372,7 @@ function App() {
                             Status
                             <select
                               value={selectedTask.status}
+                              data-testid="task-status-select"
                               onChange={(event) =>
                                 handleSetTaskStatus(
                                   selectedTask,
@@ -1321,12 +1389,14 @@ function App() {
                           </label>
                           <button
                             className="secondary-button"
+                            data-testid="task-edit-button"
                             onClick={() => startTaskEdit(selectedTask)}
                           >
                             Edytuj
                           </button>
                           <button
                             className="danger-button"
+                            data-testid="task-delete-button"
                             onClick={() => handleDeleteTask(selectedTask)}
                           >
                             Usuń
