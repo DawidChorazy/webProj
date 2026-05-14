@@ -213,7 +213,6 @@ async function upsertUserFromProfile(profile) {
         { projection: { _id: 0, id: 1, email: 1, role: 1, isBlocked: 1 } }
       )) || existing;
   } catch {
-    // The app can still authenticate even if the users collection is temporarily unavailable.
   }
 
   const isBlocked = blockedEmails.has(email.toLowerCase()) || Boolean(existing?.isBlocked);
@@ -322,10 +321,7 @@ if (clientID && clientSecret) {
 app.get("/auth/google", (req, res, next) => {
   if (!clientID || !clientSecret) {
     return res.status(500).send(
-      "Google OAuth is not configured. Create a file named .env next to package.json " +
-        "(copy from .env.example) and set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from " +
-        "Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs. " +
-        "Restart npm run dev:api (or dev:full) after saving."
+      "Google OAuth is not configured."
     );
   }
   passport.authenticate("google", { prompt: "select_account" })(req, res, next);

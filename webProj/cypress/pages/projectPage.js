@@ -131,8 +131,8 @@ export class ProjectPage {
       .clear()
       .type(newDescription);
     cy.get('[data-testid="task-edit-priority-select"]').select(priority);
-    cy.get('[data-testid="task-edit-estimated-hours-input"]').clear().type(estimatedHours);
-    cy.get('[data-testid="task-edit-spent-hours-input"]').clear().type(spentHours);
+    cy.get('[data-testid="task-edit-estimated-hours-input"]').clear().type(`${estimatedHours}{rightarrow}{backspace}`);
+    cy.get('[data-testid="task-edit-spent-hours-input"]').clear().type(`${spentHours}{rightarrow}{backspace}`);
     cy.get('[data-testid="task-save-button"]').click();
   }
 
