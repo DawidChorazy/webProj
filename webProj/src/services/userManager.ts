@@ -33,7 +33,6 @@ class UserManager {
     await this.storage.remove(CURRENT_USER_KEY);
   }
 
-  // 🔹 USERS DB
   private async getUsers(): Promise<User[]> {
     return (await this.storage.get<User[]>(USERS_KEY)) || [];
   }
@@ -42,7 +41,6 @@ class UserManager {
     await this.storage.set(USERS_KEY, users);
   }
 
-  // 🔹 LOGIN / FIRST LOGIN FLOW (Google OAuth tutaj później wejdzie)
   async loginOrCreateUser(data: {
     email: string;
     firstName: string;
@@ -66,7 +64,6 @@ class UserManager {
 
       users.push(user);
 
-      // 🔥 hook pod notification (na później)
       this.onFirstLogin(user);
     } else {
       user.lastLoginAt = new Date().toISOString();
@@ -78,16 +75,10 @@ class UserManager {
     return user;
   }
 
-  // 🔥 FIRST LOGIN HOOK (tu podpinasz NotificationService)
   private onFirstLogin(user: User) {
-    // na razie tylko log
     console.log("NEW USER CREATED:", user.email);
-
-    // później:
-    // NotificationService.create({ priority: "high", ... })
   }
 
-  // 🔹 ROLE MANAGEMENT
   async updateRole(userId: string, role: UserRole): Promise<void> {
     const users = (await this.getUsers()).map(u =>
       u.id === userId ? { ...u, role } : u
@@ -96,7 +87,6 @@ class UserManager {
     await this.saveUsers(users);
   }
 
-  // 🔹 BLOCK USER
   async blockUser(userId: string): Promise<void> {
     const users = (await this.getUsers()).map(u =>
       u.id === userId ? { ...u, blocked: true } : u
@@ -113,7 +103,6 @@ class UserManager {
     await this.saveUsers(users);
   }
 
-  // 🔹 ACCESS HELPERS
   isAdmin(user?: User | null): boolean {
     if (!user) return false;
     return user.role === "admin" || user.role === "super_admin";
